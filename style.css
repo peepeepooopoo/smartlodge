@@ -432,6 +432,7 @@ form {
 /* booking.html */
 .booking-body {
     font-family: Arial, sans-serif;
+    background: url("leaves.jpg");
     background-color: #f4f4f4;
     display: flex;
     justify-content: center;
