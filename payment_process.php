@@ -18,7 +18,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         die("Invalid payment method selected.");
     }
 
-    $payment_date = date("Y-m-d"); // Use today's date for payment
+    // Check if booking exists and is approved
+    $check_booking = $conn->prepare("SELECT Status FROM booking WHERE BookingID = ?");
+    $check_booking->bind_param("i", $booking_id);
+    $check_booking->execute();
+    $booking_result = $check_booking->get_result();
+    $booking = $booking_result->fetch_assoc();
+    $check_booking->close();
+
+    if (!$booking) {
+        die("Booking not found.");
+    }
+
+    if ($booking['Status'] !== 'approved') {
+        die("This booking is not yet approved for payment.");
+    }
+
+    $payment_date = date("Y-m-d");
 
     // Start transaction
     $conn->begin_transaction();
@@ -33,8 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute();
         $stmt->close();
 
-        // Update booking status to approved
-        $update_query = "UPDATE booking SET Status = 'approved' WHERE BookingID = ?";
+        // Update booking status to completed
+        $update_query = "UPDATE booking SET Status = 'completed' WHERE BookingID = ?";
         $update_stmt = $conn->prepare($update_query);
         $update_stmt->bind_param("i", $booking_id);
         $update_stmt->execute();
@@ -43,7 +59,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Commit transaction
         $conn->commit();
 
+        // Store booking ID in session for receipt download
+        $_SESSION['last_booking_id'] = $booking_id;
+
         // Redirect to success page
+        $_SESSION['payment_success'] = "Payment processed successfully! Your booking is now confirmed.";
         header("Location: payment_success.php");
         exit();
 

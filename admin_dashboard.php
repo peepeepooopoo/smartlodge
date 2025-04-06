@@ -1,12 +1,14 @@
 <?php
 session_start();
-// Restrict access to admins only
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
-    header("Location: login.php");
-    exit();
-}
-
 include 'db_connection.php';
+include 'auth_helpers.php';
+
+// Use the require_admin_auth function to check admin access
+require_admin_auth();
+
+// Get admin name from session
+$admin_name = get_admin_name();
+$admin_email = $_SESSION['admin_email'] ?? '';
 ?>
 
 <!DOCTYPE html>
@@ -220,6 +222,9 @@ include 'db_connection.php';
                 </a>
                 <a href="manage_rooms.php" class="menu-item">
                     <i class="fas fa-bed"></i> Manage Rooms
+                </a>
+                <a href="manage_payments.php" class="menu-item">
+                    <i class="fas fa-money-bill-wave"></i> Payments
                 </a>
                 <a href="reports.php" class="menu-item">
                     <i class="fas fa-chart-bar"></i> Reports

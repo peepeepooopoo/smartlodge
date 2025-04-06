@@ -1,11 +1,10 @@
 <?php
 session_start();
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
-    header("Location: login.php");
-    exit();
-}
-
 include 'db_connection.php';
+include 'auth_helpers.php';
+
+// Use the require_admin_auth function to check admin access
+require_admin_auth();
 
 // Handle booking approval
 if (isset($_POST['approve_booking'])) {
@@ -24,7 +23,22 @@ if (isset($_POST['approve_booking'])) {
     $stmt->execute();
     $stmt->close();
     
-    $_SESSION['message'] = "Booking #$bookingId approved and room $roomNumber marked as booked!";
+    $_SESSION['message'] = "Booking #$bookingId has been approved!";
+    header("Location: manage_bookings.php");
+    exit();
+}
+
+// Handle booking rejection
+if (isset($_POST['reject_booking'])) {
+    $bookingId = $_POST['booking_id'];
+    
+    // Update booking status
+    $stmt = $conn->prepare("UPDATE hotel_db.booking SET Status = 'cancelled' WHERE BookingID = ?");
+    $stmt->bind_param("i", $bookingId);
+    $stmt->execute();
+    $stmt->close();
+    
+    $_SESSION['message'] = "Booking #$bookingId has been rejected.";
     header("Location: manage_bookings.php");
     exit();
 }
@@ -69,6 +83,65 @@ if (isset($_POST['change_room_status'])) {
     header("Location: manage_bookings.php");
     exit();
 }
+
+// Handle status change
+if (isset($_POST['new_status'])) {
+    $bookingId = $_POST['booking_id'];
+    $roomNumber = $_POST['room_number'];
+    $newStatus = $_POST['new_status'];
+    
+    // Update booking status
+    $stmt = $conn->prepare("UPDATE hotel_db.booking SET Status = ? WHERE BookingID = ?");
+    $stmt->bind_param("si", $newStatus, $bookingId);
+    $stmt->execute();
+    $stmt->close();
+    
+    // Update room status based on booking status
+    if ($newStatus == 'approved') {
+        $roomStatus = 'booked';
+    } elseif ($newStatus == 'completed') {
+        $roomStatus = 'available';
+    } else {
+        $roomStatus = 'available';
+    }
+    
+    $stmt = $conn->prepare("UPDATE hotel_db.rooms SET Status = ? WHERE RoomNumber = ?");
+    $stmt->bind_param("ss", $roomStatus, $roomNumber);
+    $stmt->execute();
+    $stmt->close();
+    
+    $_SESSION['message'] = "Booking #$bookingId status updated to " . ucfirst($newStatus);
+    header("Location: manage_bookings.php");
+    exit();
+}
+
+// Get bookings with filters
+$where = [];
+$params = [];
+$types = '';
+
+if (isset($_GET['status']) && !empty($_GET['status'])) {
+    $where[] = "b.Status = ?";
+    $params[] = $_GET['status'];
+    $types .= 's';
+}
+
+$whereClause = empty($where) ? '' : 'WHERE ' . implode(' AND ', $where);
+
+$query = "SELECT b.*, g.FullName as guest_name, rt.Name as room_type 
+          FROM booking b
+          LEFT JOIN guest g ON b.GuestID = g.GuestID
+          LEFT JOIN rooms r ON b.RoomNumber = r.RoomNumber
+          LEFT JOIN roomtype rt ON r.TypeID = rt.TypeID
+          $whereClause
+          ORDER BY b.BookingID DESC";
+
+$stmt = $conn->prepare($query);
+if (!empty($params)) {
+    $stmt->bind_param($types, ...$params);
+}
+$stmt->execute();
+$result = $stmt->get_result();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -251,6 +324,7 @@ if (isset($_POST['change_room_status'])) {
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             overflow-x: auto;
+            margin-top: 20px;
         }
 
         table {
@@ -259,22 +333,26 @@ if (isset($_POST['change_room_status'])) {
             min-width: 800px;
         }
 
-        th, td {
-            padding: 12px 15px;
-            text-align: left;
-            border-bottom: 1px solid #eee;
-        }
-
         th {
-            background: var(--primary);
+            background-color: #2c3e50;
             color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
             position: sticky;
             top: 0;
-            font-weight: 500;
+            z-index: 10;
+            border-bottom: 2px solid #34495e;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #eee;
+            vertical-align: middle;
         }
 
         tr:hover {
-            background: #f9f9f9;
+            background-color: #f8f9fa;
         }
 
         /* Status Classes */
@@ -389,7 +467,202 @@ if (isset($_POST['change_room_status'])) {
             font-size: 0.8rem;
             margin-left: 5px;
         }
-   
+
+        /* Status Colors with improved visibility */
+        .status-pending {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-weight: 600;
+            display: inline-block;
+            min-width: 100px;
+            text-align: center;
+        }
+        
+        .status-approved {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-weight: 600;
+            display: inline-block;
+            min-width: 100px;
+            text-align: center;
+        }
+        
+        .status-completed {
+            background-color: #cce5ff;
+            color: #004085;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-weight: 600;
+            display: inline-block;
+            min-width: 100px;
+            text-align: center;
+        }
+        
+        .status-cancelled {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-weight: 600;
+            display: inline-block;
+            min-width: 100px;
+            text-align: center;
+        }
+
+        /* Action Buttons with improved visibility */
+        .actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-start;
+        }
+
+        .action-btn {
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 35px;
+            height: 35px;
+        }
+
+        .approve-btn {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .approve-btn:hover {
+            background-color: #218838;
+        }
+
+        .reject-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .reject-btn:hover {
+            background-color: #c82333;
+        }
+
+        .check-out-btn {
+            background-color: #17a2b8;
+            color: white;
+        }
+
+        .check-out-btn:hover {
+            background-color: #138496;
+        }
+
+        .view-btn {
+            background-color: #6c757d;
+            color: white;
+            text-decoration: none;
+        }
+
+        .view-btn:hover {
+            background-color: #5a6268;
+        }
+
+        /* Filter Section with improved visibility */
+        .filter-section {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .filter-form {
+            display: flex;
+            gap: 20px;
+            align-items: flex-end;
+        }
+
+        .form-group {
+            flex: 1;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+            font-size: 14px;
+        }
+
+        .filter-btn {
+            background-color: #2c3e50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            font-weight: 600;
+        }
+
+        .filter-btn:hover {
+            background-color: #34495e;
+        }
+
+        /* Add these new styles */
+        .status-select {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            min-width: 120px;
+            text-align: center;
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            background-size: 16px;
+        }
+
+        .status-select.status-pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .status-select.status-approved {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status-select.status-rejected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-select.status-completed {
+            background-color: #cce5ff;
+            color: #004085;
+        }
+
+        .status-select:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+        }
     </style>
 </head>
 <body>
@@ -412,6 +685,9 @@ if (isset($_POST['change_room_status'])) {
                 </a>
                 <a href="manage_rooms.php" class="menu-item">
                     <i class="fas fa-bed"></i> Manage Rooms
+                </a>
+                <a href="manage_payments.php" class="menu-item">
+                    <i class="fas fa-bed"></i> Payments
                 </a>
                 <a href="reports.php" class="menu-item">
                     <i class="fas fa-chart-bar"></i> Reports
@@ -449,16 +725,6 @@ if (isset($_POST['change_room_status'])) {
                     </div>
                     
                     <div class="form-group">
-                        <label for="room_number">Room Number</label>
-                        <input type="text" id="room_number" name="room_number" placeholder="Enter room number" value="<?php echo isset($_GET['room_number']) ? htmlspecialchars($_GET['room_number']) : ''; ?>">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="guest_id">Guest ID</label>
-                        <input type="text" id="guest_id" name="guest_id" placeholder="Enter guest ID" value="<?php echo isset($_GET['guest_id']) ? htmlspecialchars($_GET['guest_id']) : ''; ?>">
-                    </div>
-                    
-                    <div class="form-group">
                         <button type="submit" class="filter-btn">
                             <i class="fas fa-filter"></i> Filter
                         </button>
@@ -468,141 +734,60 @@ if (isset($_POST['change_room_status'])) {
             
             <!-- Bookings Table -->
             <div class="table-container">
-            <table>
-        <thead>
-            <tr>
-                <th>Booking ID</th>
-                <th>Guest</th>
-                <th>Room Number</th>
-                <th>Room Status</th>
-                <th>Check-In</th>
-                <th>Check-Out</th>
-                <th>Booking Status</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php
-            // Build filter query
-            $where = [];
-            $params = [];
-            $types = '';
-            
-            if (!empty($_GET['status'])) {
-                $where[] = "b.Status = ?";
-                $params[] = $_GET['status'];
-                $types .= 's';
-            }
-            
-            if (!empty($_GET['room_number'])) {
-                $where[] = "b.RoomNumber = ?";
-                $params[] = $_GET['room_number'];
-                $types .= 's';
-            }
-            
-            if (!empty($_GET['guest_id'])) {
-                $where[] = "b.GuestID = ?";
-                $params[] = $_GET['guest_id'];
-                $types .= 'i';
-            }
-            
-            $whereClause = empty($where) ? '' : 'WHERE ' . implode(' AND ', $where);
-            
-            $query = "SELECT 
-                        b.BookingID, 
-                        b.GuestID, 
-                        b.RoomNumber, 
-                        b.CheckInDate, 
-                        b.CheckOutDate, 
-                        b.TotalPrice, 
-                        b.Status as booking_status,
-                        u.name as guest_name,
-                        r.Status as room_status
-                    FROM hotel_db.booking b
-                    LEFT JOIN hotel_db.users u ON b.GuestID = u.id
-                    LEFT JOIN hotel_db.rooms r ON b.RoomNumber = r.RoomNumber
-                    $whereClause
-                    ORDER BY b.CheckInDate DESC";
-                    
-            $stmt = $conn->prepare($query);
-            
-            if (!empty($params)) {
-                $stmt->bind_param($types, ...$params);
-            }
-            
-            $stmt->execute();
-            $result = $stmt->get_result();
-            
-            if ($result && $result->num_rows > 0) {
-                while ($row = $result->fetch_assoc()):
-            ?>
-            <tr>
-                <td><?php echo $row['BookingID']; ?></td>
-                <td>
-                    <?php 
-                    if (!empty($row['guest_name'])) {
-                        echo htmlspecialchars($row['guest_name']) . " (ID: " . $row['GuestID'] . ")";
-                    } else {
-                        echo $row['GuestID'];
-                    }
-                    ?>
-                </td>
-                <td><?php echo htmlspecialchars($row['RoomNumber']); ?></td>
-                <td class="status-<?php echo strtolower($row['room_status']); ?>">
-                    <form method="POST" style="display: inline-flex; align-items: center;">
-                        <input type="hidden" name="room_number" value="<?php echo $row['RoomNumber']; ?>">
-                        <select name="new_status" class="status-select">
-                            <option value="available" <?php echo $row['room_status'] == 'available' ? 'selected' : ''; ?>>Available</option>
-                            <option value="booked" <?php echo $row['room_status'] == 'booked' ? 'selected' : ''; ?>>Booked</option>
-                            <option value="occupied" <?php echo $row['room_status'] == 'occupied' ? 'selected' : ''; ?>>Occupied</option>
-                        </select>
-                        <button type="submit" name="change_room_status" class="update-status-btn">
-                            <i class="fas fa-sync-alt"></i> Update
-                        </button>
-                    </form>
-                </td>
-                <td><?php echo date('M d, Y', strtotime($row['CheckInDate'])); ?></td>
-                <td><?php echo date('M d, Y', strtotime($row['CheckOutDate'])); ?></td>
-                <td class="status-<?php echo strtolower($row['booking_status']); ?>">
-                    <?php echo ucfirst($row['booking_status']); ?>
-                </td>
-                <td>
-                    <?php if ($row['booking_status'] == 'pending'): ?>
-                        <form method="POST" style="display: inline;">
-                            <input type="hidden" name="booking_id" value="<?php echo $row['BookingID']; ?>">
-                            <input type="hidden" name="room_number" value="<?php echo $row['RoomNumber']; ?>">
-                            <button type="submit" name="approve_booking" class="action-btn approve-btn">
-                                <i class="fas fa-check"></i> Approve
-                            </button>
-                        </form>
-                    <?php elseif ($row['booking_status'] == 'approved' && strtotime($row['CheckOutDate']) <= time()): ?>
-                        <form method="POST" style="display: inline;">
-                            <input type="hidden" name="booking_id" value="<?php echo $row['BookingID']; ?>">
-                            <input type="hidden" name="room_number" value="<?php echo $row['RoomNumber']; ?>">
-                            <button type="submit" name="check_out" class="action-btn check-out-btn">
-                                <i class="fas fa-door-open"></i> Check Out
-                            </button>
-                        </form>
-                    <?php endif; ?>
-                    
-                    <a href="view_booking.php?id=<?php echo $row['BookingID']; ?>" class="action-btn view-btn">
-                        <i class="fas fa-eye"></i> View
-                    </a>
-                </td>
-            </tr>
-            <?php 
-                endwhile;
-            } else {
-                echo '<tr><td colspan="8" style="text-align: center;">No bookings found matching your criteria</td></tr>';
-            }
-            
-            $stmt->close();
-            $conn->close();
-            ?>
-        </tbody>
-    </table>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Booking ID</th>
+                            <th>Guest Name</th>
+                            <th>Room Number</th>
+                            <th>Room Type</th>
+                            <th>Check-In</th>
+                            <th>Check-Out</th>
+                            <th>Total Price</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php while ($row = $result->fetch_assoc()): ?>
+                        <tr>
+                            <td><?php echo $row['BookingID']; ?></td>
+                            <td><?php echo htmlspecialchars($row['guest_name']); ?></td>
+                            <td><?php echo $row['RoomNumber']; ?></td>
+                            <td><?php echo htmlspecialchars($row['room_type']); ?></td>
+                            <td><?php echo date('M d, Y', strtotime($row['CheckInDate'])); ?></td>
+                            <td><?php echo date('M d, Y', strtotime($row['CheckOutDate'])); ?></td>
+                            <td>$<?php echo number_format($row['TotalPrice'], 2); ?></td>
+                            <td>
+                                <form method="POST" style="display: inline;">
+                                    <input type="hidden" name="booking_id" value="<?php echo $row['BookingID']; ?>">
+                                    <input type="hidden" name="room_number" value="<?php echo $row['RoomNumber']; ?>">
+                                    <select name="new_status" class="status-select status-<?php echo strtolower($row['Status']); ?>" onchange="this.form.submit()">
+                                        <option value="pending" <?php echo $row['Status'] == 'pending' ? 'selected' : ''; ?>>Pending</option>
+                                        <option value="approved" <?php echo $row['Status'] == 'approved' ? 'selected' : ''; ?>>Approved</option>
+                                        <option value="rejected" <?php echo $row['Status'] == 'rejected' ? 'selected' : ''; ?>>Rejected</option>
+                                        <option value="completed" <?php echo $row['Status'] == 'completed' ? 'selected' : ''; ?>>Completed</option>
+                                    </select>
+                                </form>
+                            </td>
+                        </tr>
+                        <?php endwhile; ?>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
+
+    <script>
+        // Add confirmation before status change
+        document.querySelectorAll('.status-select').forEach(select => {
+            select.addEventListener('change', function(e) {
+                if (!confirm('Are you sure you want to change the booking status?')) {
+                    e.preventDefault();
+                    this.value = this.getAttribute('data-original-value');
+                }
+            });
+        });
+    </script>
 </body>
 </html>
+<?php $conn->close(); ?>

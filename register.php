@@ -6,49 +6,93 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    // Validate required fields
+    $required_fields = ['name', 'email', 'password', 'confirm_password', 'phone', 'address', 'dob', 'country', 'role'];
+    foreach ($required_fields as $field) {
+        if (empty($_POST[$field])) {
+            $_SESSION['register_error'] = "All fields are required.";
+            header("Location: register.php");
+            exit();
+        }
+    }
+    
+    // Validate password match
+    if ($_POST['password'] !== $_POST['confirm_password']) {
+        $_SESSION['register_error'] = "Passwords do not match.";
+        header("Location: register.php");
+        exit();
+    }
+    
+    // Validate email format
+    if (!filter_var($_POST['email'], FILTER_VALIDATE_EMAIL)) {
+        $_SESSION['register_error'] = "Invalid email format.";
+        header("Location: register.php");
+        exit();
+    }
+    
+    // Check if email already exists
+    $check_email = $conn->prepare("SELECT id FROM users WHERE email = ?");
+    $check_email->bind_param("s", $_POST['email']);
+    $check_email->execute();
+    $result = $check_email->get_result();
+    if ($result->num_rows > 0) {
+        $_SESSION['register_error'] = "Email already exists. Please use a different email.";
+        header("Location: register.php");
+        exit();
+    }
+    $check_email->close();
+    
+    // Extract form data
     $name = $_POST['name'];
     $email = $_POST['email'];
     $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+    $phone = $_POST['phone'];
+    $address = $_POST['address'];
+    $dob = $_POST['dob'];
     $country = $_POST['country'];
     $role = $_POST['role'];
-
-    if ($role == "guest") {
-        // Handle phone number - use NULL if empty
-        $phone = !empty($_POST['phone']) ? $_POST['phone'] : NULL;
-        $address = !empty($_POST['address']) ? $_POST['address'] : NULL;
-        $dob = !empty($_POST['dob']) ? $_POST['dob'] : NULL;
-        
-        // First insert into users table
-        $stmt = $conn->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)");
-        $stmt->bind_param("ssss", $name, $email, $password, $role);
-        $user_id = $stmt->insert_id;
-        if ($stmt->execute()) {
-            $user_id = $stmt->insert_id;
-            
-            if ($role == 'guest') {
-                $stmt_guest = $conn->prepare("INSERT INTO guest (GuestID, FullName, Email, Address, Phone, DateOfBirth) 
-                                             VALUES (?, ?, ?, ?, ?, ?)");
-                $stmt_guest->bind_param("isssss", $user_id, $name, $email, $address, $phone, $dob);
-                
-                if (!$stmt_guest->execute()) {
-                    // Rollback user creation if guest creation fails
-                    $conn->rollback();
-                    die("Error creating guest record: " . $conn->error);
-                }
-            }
-        } else {
-            echo "Error: " . $stmt->error;
-        }
-    } else {
-        // Non-guest registration
+    
+    // Start transaction
+    $conn->begin_transaction();
+    
+    try {
+        // Insert into users table
         $stmt = $conn->prepare("INSERT INTO users (name, email, password, role, country) VALUES (?, ?, ?, ?, ?)");
         $stmt->bind_param("sssss", $name, $email, $password, $role, $country);
-
-        if ($stmt->execute()) {
-            echo "<script>alert('Registration successful! You can now log in.'); window.location.href='login.php';</script>";
-        } else {
-            echo "Error: " . $stmt->error;
+        
+        if (!$stmt->execute()) {
+            throw new Exception("Error creating user account: " . $conn->error);
         }
+        
+        $user_id = $stmt->insert_id;
+        $stmt->close();
+        
+        // If role is guest, insert into guest table
+        if ($role == 'guest') {
+            $stmt_guest = $conn->prepare("INSERT INTO guest (GuestID, FullName, Email, Address, Phone, DateOfBirth) 
+                                         VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt_guest->bind_param("isssss", $user_id, $name, $email, $address, $phone, $dob);
+            
+            if (!$stmt_guest->execute()) {
+                throw new Exception("Error creating guest record: " . $conn->error);
+            }
+            $stmt_guest->close();
+        }
+        
+        // Commit transaction
+        $conn->commit();
+        
+        // Set success message and redirect
+        $_SESSION['register_success'] = "Registration successful! You can now log in.";
+        header("Location: login.php");
+        exit();
+        
+    } catch (Exception $e) {
+        // Rollback transaction on error
+        $conn->rollback();
+        $_SESSION['register_error'] = $e->getMessage();
+        header("Location: register.php");
+        exit();
     }
 }
 ?>
@@ -200,32 +244,59 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 ?>
             </div>
         <?php endif; ?>
-        <form action="register_process.php" method="POST">
+        
+        <form method="POST" action="register.php">
             <div class="form-group">
-                <label for="name">Full Name:</label>
+                <label for="name">Full Name</label>
                 <input type="text" id="name" name="name" required>
             </div>
+            
             <div class="form-group">
-                <label for="email">Email:</label>
+                <label for="email">Email</label>
                 <input type="email" id="email" name="email" required>
             </div>
+            
             <div class="form-group">
-                <label for="password">Password:</label>
+                <label for="password">Password</label>
                 <input type="password" id="password" name="password" required>
             </div>
+            
             <div class="form-group">
-                <label for="confirm_password">Confirm Password:</label>
+                <label for="confirm_password">Confirm Password</label>
                 <input type="password" id="confirm_password" name="confirm_password" required>
             </div>
+            
             <div class="form-group">
-                <label for="role">Register as:</label>
+                <label for="phone">Phone Number</label>
+                <input type="tel" id="phone" name="phone" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="address">Address</label>
+                <input type="text" id="address" name="address" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="dob">Date of Birth</label>
+                <input type="date" id="dob" name="dob" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="country">Country</label>
+                <input type="text" id="country" name="country" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="role">Role</label>
                 <select id="role" name="role" required>
                     <option value="guest">Guest</option>
                     <option value="admin">Admin</option>
                 </select>
             </div>
+            
             <button type="submit">Register</button>
         </form>
+        
         <div class="login-link">
             Already have an account? <a href="login.php">Login here</a>
         </div>

@@ -35,7 +35,7 @@ CREATE TABLE `booking` (
   `CheckOutDate` date NOT NULL,
   `TotalPrice` decimal(10,2) DEFAULT NULL CHECK (`TotalPrice` >= 0),
   `Capacity` int(11) DEFAULT NULL,
-  `Status` enum('pending_payment','approved','completed','cancelled') NOT NULL DEFAULT 'pending_payment'
+  `Status` enum('pending_approval','pending_payment','approved','completed','cancelled') NOT NULL DEFAULT 'pending_approval'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --

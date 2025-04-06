@@ -36,12 +36,12 @@ try {
     error_log("Form data received - Room Type: $room_type, Check-in: $checkin_date, Check-out: $checkout_date, Guests: $guests");
 
     // 2. Validate session
-    if (!isset($_SESSION['user_id']) || empty($_SESSION['user_id']) || $_SESSION['role'] !== 'guest') {
+    if (!isset($_SESSION['guest_id'])) {
         $_SESSION['booking_error'] = "You must be logged in as a guest to book a room.";
         header("Location: booking.php");
         exit();
     }
-    $guest_id = $_SESSION['user_id'];
+    $guest_id = $_SESSION['guest_id'];
     error_log("Guest ID: $guest_id");
 
     // 3. Find an available room of the selected type
@@ -102,7 +102,7 @@ try {
     // 8. Insert booking record
     $insert_booking = $conn->prepare("INSERT INTO booking 
         (GuestID, RoomNumber, CheckInDate, CheckOutDate, TotalPrice, Capacity, Status) 
-        VALUES (?, ?, ?, ?, ?, ?, 'pending_payment')");
+        VALUES (?, ?, ?, ?, ?, ?, 'pending')");
     $insert_booking->bind_param("iissdi", 
         $guest_id, 
         $room['RoomNumber'],
@@ -123,8 +123,8 @@ try {
     $conn->commit();
     error_log("Transaction committed successfully");
 
-    // 10. Redirect to payment
-    header("Location: payment.php?booking_id=$booking_id&amount=$total_price");
+    // 10. Redirect to booking processing page
+    header("Location: booking_processing.php?booking_id=$booking_id");
     exit();
 
 } catch (Exception $e) {

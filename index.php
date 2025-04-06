@@ -7,8 +7,9 @@ session_start();
 include 'db_connection.php'; // Include database connection file
 
 // Check if user is logged in
-$isLoggedIn = isset($_SESSION['user_id']); 
-
+$isLoggedIn = isset($_SESSION['is_logged_in']) && $_SESSION['is_logged_in'] === true;
+$userName = isset($_SESSION['name']) ? $_SESSION['name'] : (isset($_SESSION['email']) ? explode('@', $_SESSION['email'])[0] : 'User');
+$userRole = isset($_SESSION['role']) ? $_SESSION['role'] : '';
 ?>
 <!DOCTYPE html>
 <html>
@@ -33,17 +34,11 @@ $isLoggedIn = isset($_SESSION['user_id']);
                 <div><a href="#contact">Contact</a></div>
             </div>
             <div class="navbar-right">
-                <?php if (isset($_SESSION['user_id'])): ?>
+                <?php if ($isLoggedIn): ?>
                     <div id="profile-container" style="display: flex; align-items: center; gap: 10px;">
-                        <?php if (isset($_SESSION['name'])): ?>
-                            <span class="welcome-text">Welcome, <?php echo htmlspecialchars($_SESSION['name']); ?></span>
-                        <?php elseif (isset($_SESSION['email'])): ?>
-                            <span class="welcome-text">Welcome, <?php echo htmlspecialchars(explode('@', $_SESSION['email'])[0]); ?></span>
-                        <?php else: ?>
-                            <span class="welcome-text">Welcome, User</span>
-                        <?php endif; ?>
+                        <span class="welcome-text" style="color: white;">Welcome, <?php echo htmlspecialchars($userName); ?> (<?php echo ucfirst($userRole); ?>)</span>
                         
-                        <a class="profile-btn" href="profile.php">
+                        <a class="profile-btn" href="<?php echo $userRole === 'admin' ? 'admin_dashboard.php' : 'guest_profile.php'; ?>">
                             <svg width="40" height="40" viewBox="0 0 24 24" fill="#d9534f" xmlns="http://www.w3.org/2000/svg">
                                 <circle cx="12" cy="8" r="4"></circle>
                                 <path d="M4 20c0-4 4-6 8-6s8 2 8 6" stroke="#d9534f" stroke-width="2" fill="none"></path>
@@ -61,7 +56,7 @@ $isLoggedIn = isset($_SESSION['user_id']);
         <main>
             <div   class="container">
                 <img src="smartlodge.jpg" width="100%" height="852px">
-                <div class="bottom-left">
+                <div class="container-text">
                     <span class="smartlodge-text">SMARTLODGE:</span><br>
                     <span class="smartlodge-text">Where Modern Comfort Meets Hospitality</span>
                 </div>

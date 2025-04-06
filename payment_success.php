@@ -1,8 +1,14 @@
 <?php
 session_start();
-// You can retrieve payment details from session if needed
-// $booking_id = $_SESSION['booking_id'] ?? 'Unknown';
-// $amount = $_SESSION['amount'] ?? 'Unknown';
+include 'db_connection.php';
+
+if (!isset($_SESSION['payment_success'])) {
+    header("Location: index.php");
+    exit();
+}
+
+// Get the last booking ID from the session
+$booking_id = $_SESSION['last_booking_id'] ?? null;
 ?>
 
 <!DOCTYPE html>
@@ -10,144 +16,117 @@ session_start();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payment Successful</title>
+    <title>Payment Success - SmartLodge</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        /* Global Styles */
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f7f7f7;
+        * {
             margin: 0;
             padding: 0;
-            color: #333;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
-        .confirmation-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
+        body {
+            background: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url('images/register1.jpg');
+            background-size: cover;
+            background-position: center;
             min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             padding: 20px;
         }
 
-        .confirmation-card {
-            background-color: white;
-            padding: 2.5rem;
+        .success-container {
+            background: white;
+            padding: 40px;
             border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+            max-width: 600px;
             width: 100%;
-            max-width: 500px;
             text-align: center;
         }
 
         .success-icon {
-            width: 80px;
-            height: 80px;
-            background-color: #28a745;
-            border-radius: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin: 0 auto 1.5rem;
-        }
-
-        .success-icon::before {
-            content: "✓";
-            color: white;
-            font-size: 40px;
-            font-weight: bold;
+            font-size: 64px;
+            color: #28a745;
+            margin-bottom: 20px;
         }
 
         h1 {
+            color: #2c3e50;
+            margin-bottom: 20px;
             font-size: 28px;
-            margin-bottom: 1rem;
-            color: #28a745;
         }
 
         p {
-            margin-bottom: 1.5rem;
+            color: #34495e;
+            margin-bottom: 30px;
             font-size: 16px;
             line-height: 1.6;
         }
 
-        .confirmation-details {
-            background-color: #f0f0f0;
-            padding: 1rem;
-            border-radius: 5px;
-            margin-bottom: 2rem;
-            text-align: left;
+        .buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
         }
 
-        .confirmation-details p {
-            margin: 0.5rem 0;
-        }
-
-        .reference-number {
-            font-family: monospace;
-            font-size: 18px;
-            letter-spacing: 1px;
-            background-color: #f8f8f8;
-            padding: 8px 12px;
-            border-radius: 4px;
-            border: 1px dashed #ccc;
-            display: inline-block;
-        }
-
-        .home-button {
-            padding: 0.75rem 2rem;
-            background-color: #007bff;
-            color: white;
+        .btn {
+            padding: 12px 24px;
             border: none;
             border-radius: 5px;
             cursor: pointer;
             font-size: 16px;
+            transition: all 0.3s ease;
             text-decoration: none;
-            display: inline-block;
-            transition: background-color 0.3s ease;
-            margin-top: 1rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
         }
 
-        .home-button:hover {
-            background-color: #0069d9;
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
         }
 
-        .receipt-link {
-            display: block;
-            margin-top: 1.5rem;
-            color: #007bff;
-            text-decoration: none;
+        .btn-primary:hover {
+            background-color: #0056b3;
         }
 
-        .receipt-link:hover {
-            text-decoration: underline;
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background-color: #545b62;
+        }
+
+        .btn i {
+            font-size: 18px;
         }
     </style>
 </head>
 <body>
-    <div class="confirmation-container">
-        <div class="confirmation-card">
-            <div class="success-icon"></div>
-            <h1>Payment Successful!</h1>
-            <p>Your payment has been processed successfully. Thank you for your booking.</p>
-            
-            <div class="confirmation-details">
-                <p><strong>Transaction ID:</strong> <?php echo 'TXN-' . rand(100000, 999999); ?></p>
-                <p><strong>Date:</strong> <?php echo date("F j, Y, g:i a"); ?></p>
-                <?php if (isset($_SESSION['booking_id'])): ?>
-                <p><strong>Booking ID:</strong> <?php echo $_SESSION['booking_id']; ?></p>
-                <?php endif; ?>
-                <?php if (isset($_SESSION['amount'])): ?>
-                <p><strong>Amount Paid:</strong> $<?php echo number_format($_SESSION['amount'], 2); ?></p>
-                <?php endif; ?>
-            </div>
-            
-            <p>A confirmation email has been sent to your registered email address.</p>
-            <p>Your reference number is:</p>
-            <div class="reference-number"><?php echo 'REF-' . strtoupper(substr(md5(uniqid()), 0, 8)); ?></div>
-            
-            <a href="index.php" class="home-button">Return to Home</a>
-            <a href="download_receipt.php<?php echo isset($_SESSION['booking_id']) ? '?booking_id='.$_SESSION['booking_id'] : ''; ?>" class="receipt-link">Download Receipt</a>
+    <div class="success-container">
+        <i class="fas fa-check-circle success-icon"></i>
+        <h1>Payment Successful!</h1>
+        <p><?php echo $_SESSION['payment_success']; ?></p>
+        <div class="buttons">
+            <?php if ($booking_id): ?>
+            <a href="generate_receipt.php?booking_id=<?php echo $booking_id; ?>" class="btn btn-primary">
+                <i class="fas fa-download"></i> Download Receipt
+            </a>
+            <?php endif; ?>
+            <a href="index.php" class="btn btn-secondary">
+                <i class="fas fa-home"></i> Return to Home
+            </a>
         </div>
     </div>
 </body>
 </html>
+<?php
+// Clear the success message after displaying
+unset($_SESSION['payment_success']);
+?>

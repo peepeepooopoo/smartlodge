@@ -7,25 +7,6 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 }
 
 include 'db_connection.php';
-
-// Handle status update
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['room_number'], $_POST['status'])) {
-    $room_number = (int)$_POST['room_number'];
-    $status = $_POST['status'] === 'available' ? 'Available' : 'Booked';
-    
-    $stmt = $conn->prepare("UPDATE rooms SET Status = ? WHERE RoomNumber = ?");
-    $stmt->bind_param("si", $status, $room_number);
-    
-    if ($stmt->execute()) {
-        $_SESSION['room_message'] = "Room $room_number status updated to $status";
-    } else {
-        $_SESSION['room_error'] = "Error updating room status: " . $conn->error;
-    }
-    
-    $stmt->close();
-    header("Location: manage_rooms.php");
-    exit();
-}
 ?>
 
 <!DOCTYPE html>
@@ -33,10 +14,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['room_number'], $_POST
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartLodge - Manage Rooms</title>
+    <title>SmartLodge - View Guests</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        /* Reuse your existing admin dashboard styles */
         :root {
             --primary: #2c3e50;
             --secondary: #3498db;
@@ -122,33 +102,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['room_number'], $_POST
             padding: 8px 15px;
             border-radius: 4px;
             cursor: pointer;
+            text-decoration: none;
         }
         
-        /* Room Management Styles */
-        .room-filters {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .filter-btn {
-            padding: 8px 15px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            background: var(--light);
-        }
-        
-        .filter-btn.active {
-            background: var(--secondary);
-            color: white;
-        }
-        
+        /* Table Styles */
         .table-container {
             background: white;
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             overflow: hidden;
+            margin-top: 20px;
         }
         
         table {
@@ -171,16 +134,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['room_number'], $_POST
             background: #f9f9f9;
         }
         
-        .status-available {
-            color: var(--success);
-            font-weight: bold;
-        }
-        
-        .status-booked {
-            color: var(--danger);
-            font-weight: bold;
-        }
-        
         .action-btn {
             padding: 5px 10px;
             border: none;
@@ -188,27 +141,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['room_number'], $_POST
             cursor: pointer;
             margin-right: 5px;
             font-size: 0.8rem;
+            text-decoration: none;
+            display: inline-block;
         }
         
-        .toggle-btn {
+        .view-btn {
             background: var(--secondary);
             color: white;
         }
         
-        .message {
-            padding: 10px 15px;
+        .search-container {
             margin-bottom: 20px;
+        }
+        
+        .search-input {
+            padding: 8px 15px;
+            border: 1px solid #ddd;
             border-radius: 4px;
+            width: 300px;
+            font-size: 1rem;
         }
         
-        .success-message {
-            background: #d4edda;
-            color: #155724;
+        .search-btn {
+            padding: 8px 15px;
+            background: var(--secondary);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
         }
         
-        .error-message {
-            background: #f8d7da;
-            color: #721c24;
+        .no-results {
+            text-align: center;
+            padding: 20px;
+            color: #666;
         }
     </style>
 </head>
@@ -227,10 +194,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['room_number'], $_POST
                 <a href="manage_bookings.php" class="menu-item">
                     <i class="fas fa-calendar-check"></i> Manage Bookings
                 </a>
-                <a href="view_guests.php" class="menu-item">
+                <a href="view_guests.php" class="menu-item active">
                     <i class="fas fa-users"></i> View Guests
                 </a>
-                <a href="manage_rooms.php" class="menu-item active">
+                <a href="manage_rooms.php" class="menu-item">
                     <i class="fas fa-bed"></i> Manage Rooms
                 </a>
                 <a href="manage_payments.php" class="menu-item">
@@ -248,85 +215,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['room_number'], $_POST
         <!-- Main Content -->
         <div class="main-content">
             <div class="header">
-                <h1 class="welcome-message">Manage Rooms</h1>
+                <h1 class="welcome-message">Guest Management</h1>
                 <a href="logout.php" class="logout-btn">
                     <i class="fas fa-sign-out-alt"></i> Logout
                 </a>
             </div>
 
-            <!-- Status Messages -->
-            <?php if (isset($_SESSION['room_message'])): ?>
-                <div class="message success-message">
-                    <?php echo $_SESSION['room_message']; unset($_SESSION['room_message']); ?>
-                </div>
-            <?php endif; ?>
-            
-            <?php if (isset($_SESSION['room_error'])): ?>
-                <div class="message error-message">
-                    <?php echo $_SESSION['room_error']; unset($_SESSION['room_error']); ?>
-                </div>
-            <?php endif; ?>
-
-            <!-- Room Filters -->
-            <div class="room-filters">
-                <button class="filter-btn active" data-filter="all">All Rooms</button>
-                <button class="filter-btn" data-filter="available">Available</button>
-                <button class="filter-btn" data-filter="booked">Booked</button>
+            <!-- Search Bar -->
+            <div class="search-container">
+                <form method="GET" action="">
+                    <input type="text" name="search" class="search-input" placeholder="Search by name, email, or phone..." 
+                           value="<?php echo isset($_GET['search']) ? htmlspecialchars($_GET['search']) : ''; ?>">
+                    <button type="submit" class="search-btn">
+                        <i class="fas fa-search"></i> Search
+                    </button>
+                </form>
             </div>
 
-            <!-- Rooms Table -->
+            <!-- Guests Table -->
             <div class="table-container">
-                <table id="rooms-table">
+                <table>
                     <thead>
                         <tr>
-                            <th>Room #</th>
-                            <th>Type</th>
-                            <th>Status</th>
-                            <th>Price/Night</th>
-                            <th>Capacity</th>
+                            <th>Guest ID</th>
+                            <th>Full Name</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                            <th>Address</th>
+                            <th>Date of Birth</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php
-                        $query = "SELECT 
-                                    r.RoomNumber, 
-                                    r.Status, 
-                                    rt.Name as TypeName, 
-                                    rt.PricePerNight, 
-                                    rt.Capacity
-                                FROM rooms r
-                                JOIN roomtype rt ON r.TypeID = rt.TypeID
-                                ORDER BY r.RoomNumber";
+                        // Build the query based on search parameter
+                        $query = "SELECT * FROM guest";
+                        if (isset($_GET['search']) && !empty($_GET['search'])) {
+                            $search = $conn->real_escape_string($_GET['search']);
+                            $query .= " WHERE FullName LIKE '%$search%' 
+                                      OR Email LIKE '%$search%' 
+                                      OR Phone LIKE '%$search%'";
+                        }
+                        $query .= " ORDER BY GuestID DESC";
+                        
                         $result = $conn->query($query);
                         
                         if ($result && $result->num_rows > 0) {
                             while ($row = $result->fetch_assoc()):
                         ?>
-                        <tr data-status="<?php echo strtolower($row['Status']); ?>">
-                            <td><?php echo $row['RoomNumber']; ?></td>
-                            <td><?php echo htmlspecialchars($row['TypeName']); ?></td>
-                            <td class="status-<?php echo strtolower($row['Status']); ?>">
-                                <?php echo $row['Status']; ?>
-                            </td>
-                            <td>$<?php echo number_format($row['PricePerNight'], 2); ?></td>
-                            <td><?php echo $row['Capacity']; ?></td>
+                        <tr>
+                            <td><?php echo $row['GuestID']; ?></td>
+                            <td><?php echo htmlspecialchars($row['FullName']); ?></td>
+                            <td><?php echo htmlspecialchars($row['Email']); ?></td>
+                            <td><?php echo htmlspecialchars($row['Phone']); ?></td>
+                            <td><?php echo htmlspecialchars($row['Address']); ?></td>
+                            <td><?php echo date('M d, Y', strtotime($row['DateOfBirth'])); ?></td>
                             <td>
-                                <form method="POST" class="status-form">
-                                    <input type="hidden" name="room_number" value="<?php echo $row['RoomNumber']; ?>">
-                                    <input type="hidden" name="status" value="<?php 
-                                        echo strtolower($row['Status']) === 'available' ? 'booked' : 'available'; 
-                                    ?>">
-                                    <button type="submit" class="action-btn toggle-btn">
-                                        Mark as <?php echo strtolower($row['Status']) === 'available' ? 'Booked' : 'Available'; ?>
-                                    </button>
-                                </form>
+                                <a href="view_guest_details.php?id=<?php echo $row['GuestID']; ?>" class="action-btn view-btn">
+                                    <i class="fas fa-eye"></i> View Details
+                                </a>
                             </td>
                         </tr>
                         <?php 
                             endwhile;
                         } else {
-                            echo '<tr><td colspan="6">No rooms found</td></tr>';
+                            echo '<tr><td colspan="7" class="no-results">No guests found</td></tr>';
                         }
                         ?>
                     </tbody>
@@ -334,29 +287,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['room_number'], $_POST
             </div>
         </div>
     </div>
-
-    <script>
-        // Filter rooms by status
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const filter = this.dataset.filter;
-                
-                // Update active button
-                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-                this.classList.add('active');
-                
-                // Filter rows
-                const rows = document.querySelectorAll('#rooms-table tbody tr');
-                rows.forEach(row => {
-                    if (filter === 'all' || row.dataset.status === filter) {
-                        row.style.display = '';
-                    } else {
-                        row.style.display = 'none';
-                    }
-                });
-            });
-        });
-    </script>
 </body>
-</html>
-<?php $conn->close(); ?>
+</html> 
